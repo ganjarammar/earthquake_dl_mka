@@ -2,5 +2,7 @@ Laporan Kelompok 2 - EQ - DL.docx
 Kelompok Earthquake DL.pptx
 EQTransformer/*
 modules/__pycache__/*
-data/*
+notebooks/*.log
+data/*/*.hdf5
+data/*/*.csv
 docs/*
