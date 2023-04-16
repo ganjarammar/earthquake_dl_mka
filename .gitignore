@@ -4,3 +4,4 @@ EQTransformer/*
 modules/__pycache__/*
 data/*
 docs/*
+src/__pycache__/*
