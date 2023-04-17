@@ -6,3 +6,4 @@ notebooks/*.log
 data/*/*.hdf5
 data/*/*.csv
 docs/*
+src/__pycache__/*
