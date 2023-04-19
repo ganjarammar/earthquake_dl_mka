@@ -2691,7 +2691,7 @@ def _lr_schedule(epoch):
 
 
 
-class cred2():
+class EqTransformerCopy:
     
     """ 
     
@@ -2850,6 +2850,6 @@ class cred2():
         model = Model(inputs=inp, outputs=[d, P, S])
 
         model.compile(loss=self.loss_types, loss_weights=self.loss_weights,    
-            optimizer=Adam(lr=_lr_schedule(0)), metrics=[f1])
+            optimizer=Adam(learning_rate=_lr_schedule(0)), metrics=[f1])
 
         return model
