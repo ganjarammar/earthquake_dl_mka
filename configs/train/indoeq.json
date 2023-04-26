@@ -1,6 +1,6 @@
 {
-    "input_hdf5": "../data/2015.2023.20.5.chunk_indo.hdf5",
-    "input_csv": "../data/2015.2023.20.5.metadata_indo.csv",
+    "input_hdf5": "../data/indo/2015.2023.20.5.chunk_indo.hdf5",
+    "input_csv": "../data/indo/2015.2023.20.5.metadata_indo.csv",
     "output_name": "../outputs/indoeq",
     "model_class": "indoeq",
     "input_dimension": [6000, 3],
@@ -21,5 +21,6 @@
     "batch_size": 32,
     "epochs": 20,
     "monitor": "val_loss",
-    "patience": 2
+    "patience": 2,
+    "gpuid": 1
 }

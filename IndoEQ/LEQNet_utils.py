@@ -2792,6 +2792,8 @@ class LEQNetCopy:
                  decoder_depth=5,
                  cnn_blocks=4,
                  BiLSTM_blocks=3,
+                 num_heads=8,
+                 key_dim=16,
                  drop_rate=0.1,
                  loss_weights=[0.2, 0.3, 0.5],
                  loss_types=['binary_crossentropy', 'binary_crossentropy', 'binary_crossentropy'],                                 

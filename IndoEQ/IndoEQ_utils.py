@@ -2276,6 +2276,7 @@ class IndoEQ:
         for bb in range(self.BiLSTM_blocks):
             x = _block_BiLSTM(self.nb_filters[1], self.drop_rate, self.padding, x)
 
+        # print('num_heads:',self.num_heads,'key_dim:', self.key_dim)
         x, weightdD0 = _transformer(x, name='attentionD0',
                                     num_heads=self.num_heads,
                                     key_dim=self.key_dim,

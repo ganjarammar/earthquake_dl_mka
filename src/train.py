@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import argparse
-
+import tensorflow as tf
 sys.path.append('../')
 
 from IndoEQ.trainer import trainer

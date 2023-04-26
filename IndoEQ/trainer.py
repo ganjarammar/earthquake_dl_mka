@@ -342,14 +342,28 @@ class DataGenerator(keras.utils.Sequence):
         # Generate data
         for i, ID in enumerate(list_IDs_temp):
             additions = None
-            dataset = fl.get(str(ID) + '/data')
+            # dataset = fl.get(str(ID) + '/data') # comment if using STEAD 
+            dataset = fl.get('data/' + str(ID)) 
 
             # if ID.split('_')[-1] == 'EV':
-            data = np.array(dataset).T[:6000]
-            spt = int(dataset.attrs['p_'])
-            sst = int(dataset.attrs['s_'])
-            coda_end = int(dataset.attrs['coda_'])
-            
+            # ------ comment if using STEAD 
+            # data = np.array(dataset).T[:6000]
+            # spt = int(dataset.attrs['p_'])
+            # sst = int(dataset.attrs['s_'])
+            # coda_end = int(dataset.attrs['coda_'])
+            # ------
+
+            # ------ comment if not using STEAD 
+            data = np.array(dataset)[:6000]
+            try:
+                spt = int(dataset.attrs['p_arrival_sample'])
+                sst = int(dataset.attrs['s_arrival_sample'])
+                # coda_end = int(dataset.attrs['coda_end_sample'])[0][0]
+            except Exception as e:
+                # print(i, str(ID), f'| {e}')
+                continue
+            # ------ comment if not using STEAD 
+
             snr = None
             # snr = dataset.attrs['snr_db']
 
@@ -587,7 +601,9 @@ def trainer(input_hdf5=None,
             number_of_gpus=4,
             gpuid=None,
             gpu_limit=None,
-            use_multiprocessing=True):
+            use_multiprocessing=True,
+            key_dim=16,
+            num_heads=8):
 
     """
 
@@ -755,7 +771,9 @@ def trainer(input_hdf5=None,
     "number_of_gpus": number_of_gpus,
     "gpuid": gpuid,
     "gpu_limit": gpu_limit,
-    "use_multiprocessing": use_multiprocessing
+    "use_multiprocessing": use_multiprocessing,
+    "key_dim": key_dim,
+    "num_heads": num_heads
     }
 
     def train(args):
@@ -804,11 +822,17 @@ def trainer(input_hdf5=None,
 
         if args['gpuid']:
             os.environ['CUDA_VISIBLE_DEVICES'] = '{}'.format(gpuid)
-            tf.Session(config=tf.ConfigProto(log_device_placement=True))
-            config = tf.ConfigProto()
-            config.gpu_options.allow_growth = True
-            config.gpu_options.per_process_gpu_memory_fraction = float(args['gpu_limit'])
-            K.tensorflow_backend.set_session(tf.Session(config=config))
+            gpus = tf.config.list_physical_devices('GPU')
+            if gpus:
+                try:
+                    for gpu in gpus:
+                        tf.config.experimental.set_memory_growth(gpu, True)
+                        logical_gpus = tf.config.list_logical_devices('GPU')
+                        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+                except RuntimeError as e:
+                    print(e)
+            else:
+                print("tensorflow can't activate GPU and change using CPU")
 
         start_training = time.time()
 
@@ -952,6 +976,8 @@ def _build_model(args):
         loss_types=args['loss_types'],
         kernel_regularizer=keras.regularizers.l2(1e-6),
         bias_regularizer=keras.regularizers.l1(1e-4),
+        num_heads=args['num_heads'],
+        key_dim=args['key_dim']
     )
     if class_name == 'indoeq':
         kwargs.update({'use_prelu': args['use_prelu']})
@@ -1172,7 +1198,7 @@ def _document_training(history, model, start_training, end_training, save_dir, s
 
     """
 
-    np.save(save_dir+'/history',history)
+    np.save(save_dir+'/history',history.history)
     model.save(save_dir+'/final_model.h5')
     model.to_json()
     model.save_weights(save_dir+'/model_weights.h5')
@@ -1195,7 +1221,7 @@ def _document_training(history, model, start_training, end_training, save_dir, s
 
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
-    plt.grid(b=True, which='major', color='#666666', linestyle='-')
+    # plt.grid(b=True, which='major', color='#666666', linestyle='-')
     fig.savefig(os.path.join(save_dir,str('X_learning_curve_loss.png')))
 
     fig = plt.figure()
@@ -1212,7 +1238,7 @@ def _document_training(history, model, start_training, end_training, save_dir, s
         ax.legend(['detector_f1', 'picker_P_f1', 'picker_S_f1'], loc='lower right')
     plt.ylabel('F1')
     plt.xlabel('Epoch')
-    plt.grid(b=True, which='major', color='#666666', linestyle='-')
+    # plt.grid(b=True, which='major', color='#666666', linestyle='-')
     fig.savefig(os.path.join(save_dir,str('X_learning_curve_f1.png')))
 
     delta = end_training - start_training

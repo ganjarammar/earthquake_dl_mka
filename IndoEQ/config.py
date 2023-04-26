@@ -25,3 +25,6 @@ class TrainingConfig:
     epochs                  : int   = 20
     monitor                 : str   = 'val_loss'
     patience                : int   = 2
+    gpuid                   : int   = None
+    key_dim                 : int   = 16
+    num_heads               : int   = 8

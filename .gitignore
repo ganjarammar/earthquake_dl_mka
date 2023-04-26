@@ -1,5 +1,6 @@
 EQTransformer/*
 data/*
+outputs/*
 docs/*
 modules/__pycache__/*
 src/__pycache__/*
