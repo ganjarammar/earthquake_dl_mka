@@ -2242,7 +2242,7 @@ class IndoEQ:
         self.num_heads = num_heads
         self.key_dim = key_dim
         self.value_dim = value_dim
-        self.drop_rate= drop_rate
+        self.drop_rate = drop_rate
         self.use_prelu = use_prelu
         self.loss_weights = loss_weights
         self.loss_types = loss_types
@@ -2324,11 +2324,22 @@ class IndoEQ:
         P = Conv1D(1, 11, padding = self.padding, activation='sigmoid', name='picker_P')(decoder_P)
 
         SLSTM = LSTM(self.nb_filters[1], return_sequences=True, dropout=self.drop_rate, recurrent_dropout=self.drop_rate)(encoded)
-        norm_layerS, weightdS = MultiHeadAttention(num_heads=self.num_heads,
-                                                   key_dim=self.key_dim,
-                                                   value_dim=self.value_dim,
-                                                   dropout=self.drop_rate,
-                                                   name='attentionS')(query=SLSTM, value=SLSTM, return_attention_scores=True)
+        norm_layerS, weightdS = MultiHeadAttention(
+            num_heads=self.num_heads,
+            key_dim=self.key_dim,
+            value_dim=self.value_dim,
+            dropout=self.drop_rate,
+            name='attentionS'
+        )(query=SLSTM, value=SLSTM, return_attention_scores=True)
+        
+        norm_layerS2D, weight_attS2D = MultiHeadAttention(
+            num_heads=self.num_heads,
+            key_dim=self.key_dim,
+            value_dim=self.value_dim,
+            dropout=self.drop_rate,
+            # output_shape=tf.shape(SLSTM)[1],
+            name='attentionS2D'
+        )(query=norm_layerS, value=d, return_attention_scores=True)
 
 
         decoder_S = _decoder([i for i in reversed(self.nb_filters)],
@@ -2340,19 +2351,9 @@ class IndoEQ:
                             self.activationf,
                             self.padding,
                             self.use_prelu,
-                            norm_layerS)
+                            norm_layerS2D)
 
-        S = Conv1D(1, 11, padding = self.padding, activation=None, name='last_conv_S')(decoder_S)
-        S, att_scores = MultiHeadAttention(
-            num_heads=self.num_heads,
-            key_dim=self.key_dim,
-            value_dim=self.value_dim,
-            dropout=self.drop_rate,
-            name='attentionS2D')(query=d, value=S, return_attention_scores=True)
-
-        # apply sigmoid
-        S = Activation('sigmoid', name='picker_S')(S)
-
+        S = Conv1D(1, 11, padding = self.padding, activation='sigmoid', name='picker_S')(decoder_S)
         model = Model(inputs=inp, outputs=[d, P, S])
 
         model.compile(loss=self.loss_types, loss_weights=self.loss_weights,
