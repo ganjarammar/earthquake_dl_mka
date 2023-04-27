@@ -1640,6 +1640,12 @@ def normalize(data, mode='std'):
     return data
 
 
+def get_prelu(alpha_init=0.25):
+    return tf.keras.layers.PReLU(
+        alpha_initializer=tf.constant_initializer(alpha_init)
+    )
+
+
 class FeedForward(keras.layers.Layer):
     """Position-wise feed-forward layer. modified from https://github.com/CyberZHG
     # Arguments
@@ -1664,14 +1670,19 @@ class FeedForward(keras.layers.Layer):
                  kernel_initializer='glorot_normal',
                  bias_initializer='zeros',
                  dropout_rate=0.0,
+                 use_prelu=False,
                  **kwargs):
         self.supports_masking = True
         self.units = units
-        self.activation = keras.activations.get(activation)
+        if use_prelu:
+            self.activation = get_prelu()
+        else:
+            self.activation = keras.activations.get(activation)
         self.use_bias = use_bias
         self.kernel_initializer = keras.initializers.get(kernel_initializer)
         self.bias_initializer = keras.initializers.get(bias_initializer)
         self.dropout_rate = dropout_rate
+        self.use_prelu = use_prelu
         self.W1, self.b1 = None, None
         self.W2, self.b2 = None, None
         super(FeedForward, self).__init__(**kwargs)
@@ -1979,7 +1990,7 @@ def _block_BiLSTM(filters, drop_rate, padding, inpR):
     'Returns LSTM residual block'
     prev = inpR
     x_rnn = Bidirectional(LSTM(filters, return_sequences=True, dropout=drop_rate, recurrent_dropout=drop_rate))(prev)
-    NiN = Conv1D(filters, 1, padding = padding)(x_rnn)
+    NiN = Conv1D(filters, 1, padding=padding)(x_rnn)
     res_out = BatchNormalization()(NiN)
     return res_out
 
@@ -1992,14 +2003,14 @@ def _block_CNN_1(filters, ker, drop_rate, activation, padding, use_prelu, inpC):
     prev = inpC
     layer_1 = BatchNormalization()(prev)
     if use_prelu:
-        act_1 = tf.keras.layers.PReLU(alpha_initializer=tf.constant_initializer(0.25))(layer_1)
+        act_1 = get_prelu()(layer_1)
     else:
         act_1 = Activation(activation)(layer_1)
     conv_1 = Conv1D(filters // 4, 1, padding=padding)(act_1)
 
     layer_2 = BatchNormalization()(conv_1)
     if use_prelu:
-        act_2 = tf.keras.layers.PReLU(alpha_initializer=tf.constant_initializer(0.25))(layer_2)
+        act_2 = get_prelu()(layer_2)
     else:
         act_2 = Activation(activation)(layer_2)
     act_2 = SpatialDropout1D(drop_rate)(act_2, training=True)
@@ -2007,7 +2018,7 @@ def _block_CNN_1(filters, ker, drop_rate, activation, padding, use_prelu, inpC):
 
     layer_3 = BatchNormalization()(conv_2)
     if use_prelu:
-        act_3 = tf.keras.layers.PReLU(alpha_initializer=tf.constant_initializer(0.25))(layer_3)
+        act_3 = get_prelu()(layer_3)
     else:
         act_3 = Activation(activation)(layer_3)
     conv_3 = Conv1D(filters, 1, padding=padding)(act_3)
@@ -2017,21 +2028,28 @@ def _block_CNN_1(filters, ker, drop_rate, activation, padding, use_prelu, inpC):
     return res_out
 
 
-def _transformer(inpC, num_heads=8, key_dim=16, value_dim=None, drop_rate=0.2, name=None):
+def _transformer(inpC, num_heads=8, key_dim=16, value_dim=None, dff=128, drop_rate=0.2, width=None, use_prelu=False, name=None):
     ' Returns a transformer block containing one addetive attention and one feed  forward layer with residual connections '
     x = inpC
 
-    att_layer, weight = MultiHeadAttention(num_heads=num_heads,
-                                           key_dim=key_dim,
-                                           value_dim=value_dim,
-                                           dropout=drop_rate,
-                                           name=name)(query=x, value=x, return_attention_scores=True)
+    if num_heads > 1:
+        att_layer, weight = MultiHeadAttention(
+            num_heads=num_heads,
+            key_dim=key_dim,
+            value_dim=value_dim,
+            dropout=drop_rate,
+            name=name
+        )(query=x, value=x, return_attention_scores=True)
+    else:
+        att_layer, weight = SeqSelfAttention(return_attention =True,
+                                             attention_width = width,
+                                             name=name)(x)
 
     #  att_layer = Dropout(drop_rate)(att_layer, training=True)
     att_layer2 = add([x, att_layer])
     norm_layer = LayerNormalization()(att_layer2)
 
-    FF = FeedForward(units=128, dropout_rate=drop_rate)(norm_layer)
+    FF = FeedForward(units=dff, dropout_rate=drop_rate, use_prelu=use_prelu)(norm_layer)
 
     FF_add = add([norm_layer, FF])
     norm_out = LayerNormalization()(FF_add)
@@ -2062,18 +2080,12 @@ def _encoder(filter_number, filter_size, depth, drop_rate, ker_regul, bias_regul
     ' Returns the encoder that is a combination of residual blocks and maxpooling.'
     e = inpC
 
-    if use_prelu:
-        activation_ = tf.keras.layers.PReLU(alpha_initializer=tf.constant_initializer(0.25))
-    else:
-        activation_ = activation
-    activation_ = activation
-
     for dp in range(depth):
         if dp>=1 and filter_number[dp-1] == filter_number[dp] and filter_number[dp] == filter_number[dp+1]:
             shared_layers = keras.layers.SeparableConv1D(filter_number[dp],
                        filter_size[dp],
                        padding = padding,
-                       activation = activation_,
+                       activation = activation,
                        kernel_regularizer = ker_regul,
                        bias_regularizer = bias_regul,
                        )
@@ -2085,7 +2097,8 @@ def _encoder(filter_number, filter_size, depth, drop_rate, ker_regul, bias_regul
                 e = keras.layers.SeparableConv1D(filter_number[dp],
                            filter_size[dp],
                            padding = padding,
-                           activation = activation_,
+                           activation = activation if not use_prelu else \
+                            get_prelu(),
                            kernel_regularizer = ker_regul,
                            bias_regularizer = bias_regul,
                            )(e)
@@ -2103,11 +2116,6 @@ def _encoder(filter_number, filter_size, depth, drop_rate, ker_regul, bias_regul
 def _decoder(filter_number, filter_size, depth, drop_rate, ker_regul, bias_regul, activation, padding, use_prelu, inpC):
     ' Returns the dencoder that is a combination of residual blocks and upsampling. '
     d = inpC
-
-    if use_prelu:
-        activation_ = tf.keras.layers.PReLU(alpha_initializer=tf.constant_initializer(0.25))
-    else:
-        activation_ = activation
 
     for dp in range(depth):
         if(dp > 1) :
@@ -2139,7 +2147,7 @@ def _decoder(filter_number, filter_size, depth, drop_rate, ker_regul, bias_regul
                            filter_size[dp],
                            padding = padding,
                            activation = activation if not use_prelu else \
-                            tf.keras.layers.PReLU(alpha_initializer=tf.constant_initializer(0.25)),
+                            get_prelu(),
                            kernel_regularizer = ker_regul,
                            bias_regularizer = bias_regul,
                            )(d)
@@ -2253,7 +2261,6 @@ class IndoEQ:
 
 
     def __call__(self, inp):
-
         x = inp
         x = _encoder(self.nb_filters,
                     self.kernel_size,
@@ -2281,12 +2288,14 @@ class IndoEQ:
                                     num_heads=self.num_heads,
                                     key_dim=self.key_dim,
                                     value_dim=self.value_dim,
-                                    drop_rate=self.drop_rate)
+                                    drop_rate=self.drop_rate,
+                                    width=None, use_prelu=self.use_prelu)
         encoded, weightdD = _transformer(x, name='attentionD',
                                          num_heads=self.num_heads,
                                          key_dim=self.key_dim,
                                          value_dim=self.value_dim,
-                                         drop_rate=self.drop_rate)
+                                         drop_rate=self.drop_rate,
+                                         width=None, use_prelu=self.use_prelu)
 
         decoder_D = _decoder([i for i in reversed(self.nb_filters)],
                              [i for i in reversed(self.kernel_size)],
@@ -2303,11 +2312,17 @@ class IndoEQ:
 
 
         PLSTM = LSTM(self.nb_filters[1], return_sequences=True, dropout=self.drop_rate, recurrent_dropout=self.drop_rate)(encoded)
-        norm_layerP, weightdP = MultiHeadAttention(num_heads=self.num_heads,
-                                                   key_dim=self.key_dim,
-                                                   value_dim=self.value_dim,
-                                                   dropout=self.drop_rate,
-                                                   name='attentionP')(query=PLSTM, value=PLSTM, return_attention_scores=True)
+        if self.num_heads > 1:
+            norm_layerP, weightdP = MultiHeadAttention(
+                num_heads=self.num_heads,
+                key_dim=self.key_dim,
+                value_dim=self.value_dim,
+                dropout=self.drop_rate,
+                name='attentionP'
+            )(query=PLSTM, value=PLSTM, return_attention_scores=True)
+        else:
+            norm_layerP, weightdP = SeqSelfAttention(
+                return_attention=True, attention_width=3, name='attentionP')(PLSTM)
 
         decoder_P = _decoder([i for i in reversed(self.nb_filters)],
                             [i for i in reversed(self.kernel_size)],
@@ -2324,13 +2339,17 @@ class IndoEQ:
         P = Conv1D(1, 11, padding = self.padding, activation='sigmoid', name='picker_P')(decoder_P)
 
         SLSTM = LSTM(self.nb_filters[1], return_sequences=True, dropout=self.drop_rate, recurrent_dropout=self.drop_rate)(encoded)
-        norm_layerS, weightdS = MultiHeadAttention(
-            num_heads=self.num_heads,
-            key_dim=self.key_dim,
-            value_dim=self.value_dim,
-            dropout=self.drop_rate,
-            name='attentionS'
-        )(query=SLSTM, value=SLSTM, return_attention_scores=True)
+        if self.num_heads > 1:
+            norm_layerS, weightdS = MultiHeadAttention(
+                num_heads=self.num_heads,
+                key_dim=self.key_dim,
+                value_dim=self.value_dim,
+                dropout=self.drop_rate,
+                name='attentionS'
+            )(query=SLSTM, value=SLSTM, return_attention_scores=True)
+        else:
+            norm_layerS, weightdS = SeqSelfAttention(
+                return_attention=True, attention_width=3, name='attentionS')(SLSTM)
         
         norm_layerS2D, weight_attS2D = MultiHeadAttention(
             num_heads=self.num_heads,
