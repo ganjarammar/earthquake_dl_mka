@@ -1,11 +1,11 @@
 {
     "input_hdf5": "../data/archive/merge.hdf5",
     "input_csv": "../data/archive/merge_filtered.csv",
-    "output_name": "../outputs/leq_stead",
+    "output_name": "../outputs/leq",
     "model_class": "leq",
     "input_dimension": [6000, 3],
-    "cnn_blocks": 4,
-    "lstm_blocks": 3,
+    "cnn_blocks": 3,
+    "lstm_blocks": 2,
     "padding": "same",
     "activation": "relu",
     "drop_rate": 0.1,
@@ -19,7 +19,7 @@
     "train_valid_test_split": [0.8, 0.1, 0.1],
     "mode": "generator",
     "batch_size": 32,
-    "epochs": 100,
+    "epochs": 200,
     "monitor": "val_loss",
     "patience": 12,
     "gpuid": 1

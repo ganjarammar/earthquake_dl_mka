@@ -813,7 +813,6 @@ def trainer(input_hdf5=None,
             Number of validation samples.
 
         """
-        print(args)
 
         save_dir, save_models=_make_dir(args['output_name'])
         training, validation=_split(args, save_dir)
