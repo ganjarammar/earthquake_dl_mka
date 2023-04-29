@@ -815,10 +815,13 @@ def trainer(input_hdf5=None,
         """
         print(args)
 
-        save_dir, save_models=_make_dir(args['output_name'])
-        training, validation=_split(args, save_dir)
-        callbacks=_make_callback(args, save_models)
-        model=_build_model(args)
+        save_dir, save_models, last_model_path = _make_dir(args['output_name'], args['model_class'])
+        training, validation = _split(args, save_dir)
+        callbacks = _make_callback(args, save_models)
+        model = _build_model(args)
+        if last_model_path is not None:
+            # load saved Keras model
+            model = tf.keras.models.load_model(last_model_path)
 
         if args['gpuid']:
             os.environ['CUDA_VISIBLE_DEVICES'] = '{}'.format(gpuid)
@@ -910,7 +913,7 @@ def trainer(input_hdf5=None,
 
 
 
-def _make_dir(output_name):
+def _make_dir(output_name, model_class=None):
 
     """
 
@@ -930,7 +933,7 @@ def _make_dir(output_name):
         Full path to the model directory.
 
     """
-
+    model_class = model_class or ''
     if output_name == None:
         print('Please specify output_name!')
         return
@@ -938,10 +941,17 @@ def _make_dir(output_name):
         save_dir = os.path.join(os.getcwd(), str(output_name)+'_outputs')
         save_models = os.path.join(save_dir, 'models')
         if os.path.isdir(save_dir):
-            shutil.rmtree(save_dir)
-        os.makedirs(save_models)
-    return save_dir, save_models
-
+            # if save dir contains `outputs` folder in its tree
+            if 'outputs' in os.listdir(save_dir):
+                # take last file in the path
+                out_path = os.path.join(save_dir, 'outputs', model_class)
+                last_model_name = sorted(os.listdir(out_path))[-1]
+                last_model_path = os.path.join(out_path, last_model_name)
+                return save_dir, save_models, last_model_path
+            else:
+                shutil.rmtree(save_dir)
+                os.makedirs(save_models)
+    return save_dir, save_models, None
 
 
 def _build_model(args):
@@ -983,6 +993,7 @@ def _build_model(args):
         kwargs.update({'use_prelu': args['use_prelu']})
 
     model = model_class(**kwargs)(inp)
+
     model.summary()
     return model
 
