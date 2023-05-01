@@ -2578,7 +2578,7 @@ class SeqSelfAttention(keras.layers.Layer):
 def _block_BiLSTM(filters, drop_rate, padding, inpR):
     'Returns LSTM residual block'    
     prev = inpR
-    x_rnn = Bidirectional(LSTM(filters, return_sequences=True, dropout=drop_rate, recurrent_dropout=drop_rate))(prev)
+    x_rnn = Bidirectional(LSTM(filters, return_sequences=True, dropout=drop_rate, recurrent_dropout=0.))(prev)
     NiN = Conv1D(filters, 1, padding = padding)(x_rnn)     
     res_out = BatchNormalization()(NiN)
     return res_out
@@ -2859,7 +2859,7 @@ class LEQNetCopy:
         d = Conv1D(1, 11, padding = self.padding, activation='sigmoid', name='detector')(decoder_D)
 
 
-        PLSTM = LSTM(self.nb_filters[1], return_sequences=True, dropout=self.drop_rate, recurrent_dropout=self.drop_rate)(encoded)
+        PLSTM = LSTM(self.nb_filters[1], return_sequences=True, dropout=self.drop_rate, recurrent_dropout=0.)(encoded)
         norm_layerP, weightdP = SeqSelfAttention(return_attention=True,
                                                  attention_width= 3,
                                                  name='attentionP')(PLSTM)
@@ -2877,7 +2877,7 @@ class LEQNetCopy:
         
         P = Conv1D(1, 11, padding = self.padding, activation='sigmoid', name='picker_P')(decoder_P)
         
-        SLSTM = LSTM(self.nb_filters[1], return_sequences=True, dropout=self.drop_rate, recurrent_dropout=self.drop_rate)(encoded) 
+        SLSTM = LSTM(self.nb_filters[1], return_sequences=True, dropout=self.drop_rate, recurrent_dropout=0.)(encoded) 
         norm_layerS, weightdS = SeqSelfAttention(return_attention=True,
                                                  attention_width= 3,
                                                  name='attentionS')(SLSTM)
