@@ -77,7 +77,7 @@ class DataGenerator(keras.utils.Sequence):
     add_noise_r: {float, None}, default=None
         Chance for randomly adding Gaussian noise into the waveform.
             
-    drop_channe_r: {float, None}, default=None
+    drop_channel_r: {float, None}, default=None
         Chance for randomly dropping some of the channels.
             
     scale_amplitude_r: {float, None}, default=None
@@ -107,7 +107,7 @@ class DataGenerator(keras.utils.Sequence):
                  add_gap_r = None,
                  shift_event_r = None,
                  add_noise_r = None, 
-                 drop_channe_r = None, 
+                 drop_channel_r = None, 
                  scale_amplitude_r = None, 
                  pre_emphasis = True):
        
@@ -127,7 +127,7 @@ class DataGenerator(keras.utils.Sequence):
         self.add_gap_r = add_gap_r  
         self.shift_event_r = shift_event_r
         self.add_noise_r = add_noise_r
-        self.drop_channe_r = drop_channe_r
+        self.drop_channel_r = drop_channel_r
         self.scale_amplitude_r = scale_amplitude_r
         self.pre_emphasis = pre_emphasis
 
@@ -359,8 +359,8 @@ class DataGenerator(keras.utils.Sequence):
                         if self.add_noise_r:
                             data = self._add_noise(data, snr, self.add_noise_r);
     
-                        if self.drop_channe_r:    
-                            data = self._drop_channel(data, snr, self.drop_channe_r);
+                        if self.drop_channel_r:    
+                            data = self._drop_channel(data, snr, self.drop_channel_r);
                             data = self._adjust_amplitude_for_multichannels(data)  
                                     
                         if self.scale_amplitude_r:
@@ -373,8 +373,8 @@ class DataGenerator(keras.utils.Sequence):
                             data = self._normalize(data, self.norm_mode)                            
                                     
                     elif dataset.attrs['trace_category'] == 'noise':
-                        if self.drop_channe_r:    
-                            data = self._drop_channel_noise(data, self.drop_channe_r);
+                        if self.drop_channel_r:    
+                            data = self._drop_channel_noise(data, self.drop_channel_r);
                             
                         if self.add_gap_r:    
                             data = self._add_gaps(data, self.add_gap_r)
@@ -579,7 +579,7 @@ class PreLoadGenerator(keras.utils.Sequence):
     add_noise_r: {float, None}, default=None
         Chance for randomly adding Gaussian noise into the waveform.
             
-    drop_channe_r: {float, None}, default=None
+    drop_channel_r: {float, None}, default=None
         Chance for randomly dropping some of the channels.
             
     scale_amplitude_r: {float, None}, default=None
@@ -610,7 +610,7 @@ class PreLoadGenerator(keras.utils.Sequence):
                  add_gap_r = None,
                  shift_event_r = None,
                  add_noise_r = None, 
-                 drop_channe_r = None, 
+                 drop_channel_r = None, 
                  scale_amplitude_r = None, 
                  pre_emphasis = True):
        
@@ -631,7 +631,7 @@ class PreLoadGenerator(keras.utils.Sequence):
         self.add_gap_r = add_gap_r  
         self.shift_event_r = shift_event_r
         self.add_noise_r = add_noise_r
-        self.drop_channe_r = drop_channe_r
+        self.drop_channel_r = drop_channel_r
         self.scale_amplitude_r = scale_amplitude_r
         self.pre_emphasis = pre_emphasis       
         
@@ -860,8 +860,8 @@ class PreLoadGenerator(keras.utils.Sequence):
                         if self.add_noise_r:
                             data = self._add_noise(data, snr, self.add_noise_r);
 
-                        if self.drop_channe_r:    
-                            data = self._drop_channel(data, snr, self.drop_channe_r);
+                        if self.drop_channel_r:    
+                            data = self._drop_channel(data, snr, self.drop_channel_r);
                             data = self._adjust_amplitude_for_multichannels(data)  
                                 
                         if self.scale_amplitude_r:
@@ -874,8 +874,8 @@ class PreLoadGenerator(keras.utils.Sequence):
                             data = self._normalize(data, self.norm_mode)
 
                     elif dataset.attrs['trace_category'] == 'noise':
-                        if self.drop_channe_r:    
-                            data = self._drop_channel_noise(data, self.drop_channe_r);
+                        if self.drop_channel_r:    
+                            data = self._drop_channel_noise(data, self.drop_channel_r);
                             
                         if self.add_gap_r:    
                             data = self._add_gaps(data, self.add_gap_r)
@@ -1038,7 +1038,7 @@ def data_reader( list_IDs,
                  add_gap_r=None, 
                  shift_event_r=None,                                  
                  add_noise_r=None, 
-                 drop_channe_r=None, 
+                 drop_channel_r=None, 
                  scale_amplitude_r=None, 
                  pre_emphasis=True):   
     
@@ -1075,7 +1075,7 @@ def data_reader( list_IDs,
     add_noise_r: {float, None}, default=None
         Chance for randomly adding Gaussian noise into the waveform.
             
-    drop_channe_r: {float, None}, default=None
+    drop_channel_r: {float, None}, default=None
         Chance for randomly dropping some of the channels.
             
     scale_amplitude_r: {float, None}, default=None
@@ -1298,8 +1298,8 @@ def data_reader( list_IDs,
                 if add_event_r:
                     data, additions = _add_event(data, spt, sst, coda_end, snr, add_event_r); 
                     
-                if drop_channe_r:    
-                    data = _drop_channel(data, snr, drop_channe_r);
+                if drop_channel_r:    
+                    data = _drop_channel(data, snr, drop_channel_r);
                   #  data = _adjust_amplitude_for_multichannels(data); 
                           
                 if scale_amplitude_r:
@@ -1316,8 +1316,8 @@ def data_reader( list_IDs,
                      
                             
             if dataset.attrs['trace_category'] == 'noise':
-                if drop_channe_r:    
-                    data = _drop_channel_noise(data, drop_channe_r);
+                if drop_channel_r:    
+                    data = _drop_channel_noise(data, drop_channel_r);
                 if add_gap_r:    
                     data = _add_gaps(data, add_gap_r)                    
                 if norm_mode:                    
