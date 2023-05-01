@@ -34,7 +34,8 @@ import shutil
 import multiprocessing
 from .LEQNet_utils import DataGenerator, _lr_schedule, LEQNetCopy, PreLoadGenerator, data_reader
 from .EqT_utils import EqTransformerCopy
-from .IndoEQ_utils import IndoEQ
+from .IndoEQ_utils import IndoEQ, f1, SeqSelfAttention
+
 import datetime
 from tqdm import tqdm
 from tensorflow.python.util import deprecation
@@ -820,7 +821,18 @@ def trainer(input_hdf5=None,
         model = _build_model(args)
         if last_model_path is not None:
             # load saved Keras model
-            model = tf.keras.models.load_model(last_model_path)
+            if args['model_class'] == 'indoeq': 
+                from .IndoEQ_utils import FeedForward
+                feed_forward = FeedForward
+            elif args['model_class'] == 'leq': 
+                from .LEQNet_utils import FeedForward
+                feed_forward = FeedForward
+            else: 
+                from .EqT_utils import FeedForward
+                feed_forward = FeedForward
+
+            custom_objects = dict(FeedForward=feed_forward, f1=f1, SeqSelfAttention=SeqSelfAttention)
+            model = tf.keras.models.load_model(last_model_path, custom_objects=custom_objects)
 
         if args['gpuid']:
             os.environ['CUDA_VISIBLE_DEVICES'] = '{}'.format(gpuid)
@@ -950,6 +962,8 @@ def _make_dir(output_name, model_class=None):
             else:
                 shutil.rmtree(save_dir)
                 os.makedirs(save_models)
+        else:
+            os.makedirs(save_models)
     return save_dir, save_models, None
 
 
