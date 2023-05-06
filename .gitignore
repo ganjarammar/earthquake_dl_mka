@@ -3,7 +3,7 @@ Kelompok Earthquake DL.pptx
 EQTransformer/*
 modules/__pycache__/*
 notebooks/*.log
-data/*/*.hdf5
-data/*/*.csv
+data/*
 docs/*
 src/__pycache__/*
+notebooks/EQTransformer
