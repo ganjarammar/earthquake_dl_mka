@@ -24,6 +24,10 @@ from obspy.signal.trigger import trigger_onset
 import matplotlib
 from tensorflow.python.util import deprecation
 import tensorflow as tf
+
+import seisbench
+import seisbench.data as sbd
+import seisbench.generate as sbg
 deprecation._PRINT_DEPRECATION_WARNINGS = False
 
 
@@ -130,6 +134,13 @@ class DataGenerator(keras.utils.Sequence):
         self.drop_channel_r = drop_channel_r
         self.scale_amplitude_r = scale_amplitude_r
         self.pre_emphasis = pre_emphasis
+        self.seisbench_data = None
+        if 'waveforms' in self.file_name:
+            file_path = self.file_name.split('/')
+            seisbench.cache_data_root = "/".join(file_path[:-2])
+            if file_path[-2] == 'iquique':
+                data = sbd.Iquique(sampling_rate=100, force=True)
+                self.seisbench_data = sbg.GenericGenerator(data)
 
 
     def __len__(self):
@@ -327,200 +338,235 @@ class DataGenerator(keras.utils.Sequence):
         fl = h5py.File(self.file_name, 'r')
 
         # Generate data
-        for i, ID in enumerate(list_IDs_temp):
-            additions = None
-            dataset = fl.get('data/'+str(ID))
+        if 'waveforms' in self.file_name:
+            phase_dict = {
+                            "trace_p_arrival_sample": "P",
+                            "trace_pP_arrival_sample": "P",
+                            "trace_P_arrival_sample": "P",
+                            "trace_P1_arrival_sample": "P",
+                            "trace_Pg_arrival_sample": "P",
+                            "trace_Pn_arrival_sample": "P",
+                            "trace_PmP_arrival_sample": "P",
+                            "trace_pwP_arrival_sample": "P",
+                            "trace_pwPm_arrival_sample": "P",
+                            "trace_s_arrival_sample": "S",
+                            "trace_S_arrival_sample": "S",
+                            "trace_S1_arrival_sample": "S",
+                            "trace_Sg_arrival_sample": "S",
+                            "trace_SmS_arrival_sample": "S",
+                            "trace_Sn_arrival_sample": "S",
+                        }
 
-            if ID.split('_')[-1] == 'EV':
-                data = np.array(dataset)                    
-                spt = int(dataset.attrs['p_arrival_sample']);
-                sst = int(dataset.attrs['s_arrival_sample']);
-                coda_end = int(dataset.attrs['coda_end_sample']);
-                snr = dataset.attrs['snr_db'];
-                    
-            elif ID.split('_')[-1] == 'NO':
-                data = np.array(dataset)
-           
-            ## augmentation 
-            if self.augmentation == True:                 
-                if i <= self.batch_size//2:   
-                    if self.shift_event_r and dataset.attrs['trace_category'] == 'earthquake_local':
-                        data, spt, sst, coda_end = self._shift_event(data, spt, sst, coda_end, snr, self.shift_event_r/2);                                       
-                    if self.norm_mode:                    
-                        data = self._normalize(data, self.norm_mode)  
-                else:                  
-                    if dataset.attrs['trace_category'] == 'earthquake_local':                   
-                        if self.shift_event_r:
-                            data, spt, sst, coda_end = self._shift_event(data, spt, sst, coda_end, snr, self.shift_event_r); 
-                            
-                        if self.add_event_r:
-                            data, additions = self._add_event(data, spt, sst, coda_end, snr, self.add_event_r); 
+            augmentations = [
+                sbg.WindowAroundSample(list(phase_dict.keys()), samples_before=3000, windowlen=9000, selection="random", strategy="variable"),
+                sbg.RandomWindow(windowlen=self.dim, strategy="pad"),
+                sbg.Normalize(demean_axis=-1, amp_norm_axis=-1, amp_norm_type=self.norm_mode),
+                sbg.ChangeDtype(np.float32),
+                sbg.ProbabilisticLabeller(label_columns=phase_dict, sigma=10, dim=0, use_detection=True),
+            ]
+
+            self.seisbench_data.add_augmentations(augmentations)
+            for i in range(self.batch_size):
+                X[i, :, :] = self.seisbench_data[i]['X'].T
+                y1[i, :, 0] = self.seisbench_data[i]['y'][0]
+                y2[i, :, 0] = self.seisbench_data[i]['y'][1]
+                y3[i, :, 0] = self.seisbench_data[i]['y'][2]
+
+        else:
+            for i, ID in enumerate(list_IDs_temp):
+                additions = None
+                dataset = fl.get('data/'+str(ID))
+
+                if ID.split('_')[-1] == 'EV':
+                    data = np.array(dataset)                    
+                    spt = int(dataset.attrs['p_arrival_sample']);
+                    sst = int(dataset.attrs['s_arrival_sample']);
+                    coda_end = int(dataset.attrs['coda_end_sample']);
+                    snr = dataset.attrs['snr_db'];
+                        
+                elif ID.split('_')[-1] == 'NO':
+                    data = np.array(dataset)
+            
+                ## augmentation 
+                if self.augmentation == True:                 
+                    if i <= self.batch_size//2:   
+                        if self.shift_event_r and dataset.attrs['trace_category'] == 'earthquake_local':
+                            data, spt, sst, coda_end = self._shift_event(data, spt, sst, coda_end, snr, self.shift_event_r/2);                                       
+                        if self.norm_mode:                    
+                            data = self._normalize(data, self.norm_mode)  
+                    else:                  
+                        if dataset.attrs['trace_category'] == 'earthquake_local':                   
+                            if self.shift_event_r:
+                                data, spt, sst, coda_end = self._shift_event(data, spt, sst, coda_end, snr, self.shift_event_r); 
                                 
-                        if self.add_noise_r:
-                            data = self._add_noise(data, snr, self.add_noise_r);
-    
-                        if self.drop_channel_r:    
-                            data = self._drop_channel(data, snr, self.drop_channel_r);
-                            data = self._adjust_amplitude_for_multichannels(data)  
+                            if self.add_event_r:
+                                data, additions = self._add_event(data, spt, sst, coda_end, snr, self.add_event_r); 
                                     
-                        if self.scale_amplitude_r:
-                            data = self._scale_amplitude(data, self.scale_amplitude_r); 
-                                    
-                        if self.pre_emphasis:  
-                            data = self._pre_emphasis(data) 
-                                    
-                        if self.norm_mode:    
-                            data = self._normalize(data, self.norm_mode)                            
-                                    
-                    elif dataset.attrs['trace_category'] == 'noise':
-                        if self.drop_channel_r:    
-                            data = self._drop_channel_noise(data, self.drop_channel_r);
-                            
-                        if self.add_gap_r:    
-                            data = self._add_gaps(data, self.add_gap_r)
-                            
-                        if self.norm_mode: 
-                            data = self._normalize(data, self.norm_mode) 
-
-            elif self.augmentation == False:  
-                if self.shift_event_r and dataset.attrs['trace_category'] == 'earthquake_local':
-                    data, spt, sst, coda_end = self._shift_event(data, spt, sst, coda_end, snr, self.shift_event_r/2);                     
-                if self.norm_mode:                    
-                    data = self._normalize(data, self.norm_mode)                          
-
-            X[i, :, :] = data                                       
-
-            ## labeling 
-            if dataset.attrs['trace_category'] == 'earthquake_local': 
-                if self.label_type  == 'gaussian': 
-                    sd = None    
-                    if spt and sst: 
-                        sd = sst - spt  
-                                                            
-                    if sd and sst:
-                        if sst+int(0.4*sd) <= self.dim: 
-                            y1[i, spt:int(sst+(0.4*sd)), 0] = 1        
-                        else:
-                            y1[i, spt:self.dim, 0] = 1                       
-                             
-                    if spt and (spt-20 >= 0) and (spt+20 < self.dim):
-                        y2[i, spt-20:spt+20, 0] = np.exp(-(np.arange(spt-20,spt+20)-spt)**2/(2*(10)**2))[:self.dim-(spt-20)]                
-                    elif spt and (spt-20 < self.dim):
-                        y2[i, 0:spt+20, 0] = np.exp(-(np.arange(0,spt+20)-spt)**2/(2*(10)**2))[:self.dim-(spt-20)]
-    
-                    if sst and (sst-20 >= 0) and (sst-20 < self.dim):
-                        y3[i, sst-20:sst+20, 0] = np.exp(-(np.arange(sst-20,sst+20)-sst)**2/(2*(10)**2))[:self.dim-(sst-20)]
-                    elif sst and (sst-20 < self.dim):
-                        y3[i, 0:sst+20, 0] = np.exp(-(np.arange(0,sst+20)-sst)**2/(2*(10)**2))[:self.dim-(sst-20)]
-
-                    if additions: 
-                        add_sd = None
-                        add_spt = additions[0];
-                        add_sst = additions[1];
-                        if add_spt and add_sst: 
-                            add_sd = add_sst - add_spt  
-                                    
-                        if add_sd and add_sst+int(0.4*add_sd) <= self.dim: 
-                            y1[i, add_spt:int(add_sst+(0.4*add_sd)), 0] = 1        
-                        else:
-                            y1[i, add_spt:self.dim, 0] = 1
-                            
-                        if add_spt and (add_spt-20 >= 0) and (add_spt+20 < self.dim):
-                            y2[i, add_spt-20:add_spt+20, 0] = np.exp(-(np.arange(add_spt-20,add_spt+20)-add_spt)**2/(2*(10)**2))[:self.dim-(add_spt-20)]
-                        elif add_spt and (add_spt+20 < self.dim):
-                            y2[i, 0:add_spt+20, 0] = np.exp(-(np.arange(0,add_spt+20)-add_spt)**2/(2*(10)**2))[:self.dim-(add_spt-20)]
+                            if self.add_noise_r:
+                                data = self._add_noise(data, snr, self.add_noise_r);
         
-                        if add_sst and (add_sst-20 >= 0) and (add_sst+20 < self.dim):
-                            y3[i, add_sst-20:add_sst+20, 0] = np.exp(-(np.arange(add_sst-20,add_sst+20)-add_sst)**2/(2*(10)**2))[:self.dim-(add_sst-20)]
-                        elif add_sst and (add_sst+20 < self.dim):
-                            y3[i, 0:add_sst+20, 0] = np.exp(-(np.arange(0,add_sst+20)-add_sst)**2/(2*(10)**2))[:self.dim-(add_sst-20)]
-                                                    
+                            if self.drop_channel_r:    
+                                data = self._drop_channel(data, snr, self.drop_channel_r);
+                                data = self._adjust_amplitude_for_multichannels(data)  
+                                        
+                            if self.scale_amplitude_r:
+                                data = self._scale_amplitude(data, self.scale_amplitude_r); 
+                                        
+                            if self.pre_emphasis:  
+                                data = self._pre_emphasis(data) 
+                                        
+                            if self.norm_mode:    
+                                data = self._normalize(data, self.norm_mode)                            
+                                        
+                        elif dataset.attrs['trace_category'] == 'noise':
+                            if self.drop_channel_r:    
+                                data = self._drop_channel_noise(data, self.drop_channel_r);
+                                
+                            if self.add_gap_r:    
+                                data = self._add_gaps(data, self.add_gap_r)
+                                
+                            if self.norm_mode: 
+                                data = self._normalize(data, self.norm_mode) 
 
-                elif self.label_type  == 'triangle':                      
-                    sd = None    
-                    if spt and sst: 
-                        sd = sst - spt  
-                                                            
-                    if sd and sst:
-                        if sst+int(0.4*sd) <= self.dim: 
+                elif self.augmentation == False:  
+                    if self.shift_event_r and dataset.attrs['trace_category'] == 'earthquake_local':
+                        data, spt, sst, coda_end = self._shift_event(data, spt, sst, coda_end, snr, self.shift_event_r/2);                     
+                    if self.norm_mode:                    
+                        data = self._normalize(data, self.norm_mode)                          
+
+                X[i, :, :] = data                                       
+
+                ## labeling 
+                if dataset.attrs['trace_category'] == 'earthquake_local': 
+                    if self.label_type  == 'gaussian': 
+                        sd = None    
+                        if spt and sst: 
+                            sd = sst - spt  
+                                                                
+                        if sd and sst:
+                            if sst+int(0.4*sd) <= self.dim: 
+                                y1[i, spt:int(sst+(0.4*sd)), 0] = 1        
+                            else:
+                                y1[i, spt:self.dim, 0] = 1                       
+                                
+                        if spt and (spt-20 >= 0) and (spt+20 < self.dim):
+                            y2[i, spt-20:spt+20, 0] = np.exp(-(np.arange(spt-20,spt+20)-spt)**2/(2*(10)**2))[:self.dim-(spt-20)]                
+                        elif spt and (spt-20 < self.dim):
+                            y2[i, 0:spt+20, 0] = np.exp(-(np.arange(0,spt+20)-spt)**2/(2*(10)**2))[:self.dim-(spt-20)]
+        
+                        if sst and (sst-20 >= 0) and (sst-20 < self.dim):
+                            y3[i, sst-20:sst+20, 0] = np.exp(-(np.arange(sst-20,sst+20)-sst)**2/(2*(10)**2))[:self.dim-(sst-20)]
+                        elif sst and (sst-20 < self.dim):
+                            y3[i, 0:sst+20, 0] = np.exp(-(np.arange(0,sst+20)-sst)**2/(2*(10)**2))[:self.dim-(sst-20)]
+
+                        if additions: 
+                            add_sd = None
+                            add_spt = additions[0];
+                            add_sst = additions[1];
+                            if add_spt and add_sst: 
+                                add_sd = add_sst - add_spt  
+                                        
+                            if add_sd and add_sst+int(0.4*add_sd) <= self.dim: 
+                                y1[i, add_spt:int(add_sst+(0.4*add_sd)), 0] = 1        
+                            else:
+                                y1[i, add_spt:self.dim, 0] = 1
+                                
+                            if add_spt and (add_spt-20 >= 0) and (add_spt+20 < self.dim):
+                                y2[i, add_spt-20:add_spt+20, 0] = np.exp(-(np.arange(add_spt-20,add_spt+20)-add_spt)**2/(2*(10)**2))[:self.dim-(add_spt-20)]
+                            elif add_spt and (add_spt+20 < self.dim):
+                                y2[i, 0:add_spt+20, 0] = np.exp(-(np.arange(0,add_spt+20)-add_spt)**2/(2*(10)**2))[:self.dim-(add_spt-20)]
+            
+                            if add_sst and (add_sst-20 >= 0) and (add_sst+20 < self.dim):
+                                y3[i, add_sst-20:add_sst+20, 0] = np.exp(-(np.arange(add_sst-20,add_sst+20)-add_sst)**2/(2*(10)**2))[:self.dim-(add_sst-20)]
+                            elif add_sst and (add_sst+20 < self.dim):
+                                y3[i, 0:add_sst+20, 0] = np.exp(-(np.arange(0,add_sst+20)-add_sst)**2/(2*(10)**2))[:self.dim-(add_sst-20)]
+                                                        
+
+                    elif self.label_type  == 'triangle':                      
+                        sd = None    
+                        if spt and sst: 
+                            sd = sst - spt  
+                                                                
+                        if sd and sst:
+                            if sst+int(0.4*sd) <= self.dim: 
+                                y1[i, spt:int(sst+(0.4*sd)), 0] = 1        
+                            else:
+                                y1[i, spt:self.dim, 0] = 1                     
+                            
+                        if spt and (spt-20 >= 0) and (spt+21 < self.dim):
+                            y2[i, spt-20:spt+21, 0] = self._label()
+                        elif spt and (spt+21 < self.dim):
+                            y2[i, 0:spt+spt+1, 0] = self._label(a=0, b=spt, c=2*spt)
+                        elif spt and (spt-20 >= 0):
+                            pdif = self.dim - spt
+                            y2[i, spt-pdif-1:self.dim, 0] = self._label(a=spt-pdif, b=spt, c=2*pdif)
+            
+                        if sst and (sst-20 >= 0) and (sst+21 < self.dim):
+                            y3[i, sst-20:sst+21, 0] = self._label()
+                        elif sst and (sst+21 < self.dim):
+                            y3[i, 0:sst+sst+1, 0] = self._label(a=0, b=sst, c=2*sst)
+                        elif sst and (sst-20 >= 0):
+                            sdif = self.dim - sst
+                            y3[i, sst-sdif-1:self.dim, 0] = self._label(a=sst-sdif, b=sst, c=2*sdif)             
+        
+                        if additions: 
+                            add_spt = additions[0];
+                            add_sst = additions[1];
+                            add_sd = None
+                            if add_spt and add_sst: 
+                                add_sd = add_sst - add_spt                     
+                            
+                            if add_sd and add_sst+int(0.4*add_sd) <= self.dim: 
+                                y1[i, add_spt:int(add_sst+(0.4*add_sd)), 0] = 1        
+                            else:
+                                y1[i, add_spt:self.dim, 0] = 1                     
+        
+                            if add_spt and (add_spt-20 >= 0) and (add_spt+21 < self.dim):
+                                y2[i, add_spt-20:add_spt+21, 0] = self._label()
+                            elif add_spt and (add_spt+21 < self.dim):
+                                y2[i, 0:add_spt+add_spt+1, 0] = self._label(a=0, b=add_spt, c=2*add_spt)
+                            elif add_spt and (add_spt-20 >= 0):
+                                pdif = self.dim - add_spt
+                                y2[i, add_spt-pdif-1:self.dim, 0] = self._label(a=add_spt-pdif, b=add_spt, c=2*pdif)
+        
+                            if add_sst and (add_sst-20 >= 0) and (add_sst+21 < self.dim):
+                                y3[i, add_sst-20:add_sst+21, 0] = self._label()
+                            elif add_sst and (add_sst+21 < self.dim):
+                                y3[i, 0:add_sst+add_sst+1, 0] = self._label(a=0, b=add_sst, c=2*add_sst)
+                            elif add_sst and (add_sst-20 >= 0):
+                                sdif = self.dim - add_sst
+                                y3[i, add_sst-sdif-1:self.dim, 0] = self._label(a=add_sst-sdif, b=add_sst, c=2*sdif) 
+        
+        
+                    elif self.label_type  == 'box':
+                        sd = None                             
+                        if sst and spt:
+                            sd = sst - spt      
+
+                        if sd and sst+int(0.4*sd) <= self.dim: 
                             y1[i, spt:int(sst+(0.4*sd)), 0] = 1        
                         else:
-                            y1[i, spt:self.dim, 0] = 1                     
-                        
-                    if spt and (spt-20 >= 0) and (spt+21 < self.dim):
-                        y2[i, spt-20:spt+21, 0] = self._label()
-                    elif spt and (spt+21 < self.dim):
-                        y2[i, 0:spt+spt+1, 0] = self._label(a=0, b=spt, c=2*spt)
-                    elif spt and (spt-20 >= 0):
-                        pdif = self.dim - spt
-                        y2[i, spt-pdif-1:self.dim, 0] = self._label(a=spt-pdif, b=spt, c=2*pdif)
-         
-                    if sst and (sst-20 >= 0) and (sst+21 < self.dim):
-                        y3[i, sst-20:sst+21, 0] = self._label()
-                    elif sst and (sst+21 < self.dim):
-                        y3[i, 0:sst+sst+1, 0] = self._label(a=0, b=sst, c=2*sst)
-                    elif sst and (sst-20 >= 0):
-                        sdif = self.dim - sst
-                        y3[i, sst-sdif-1:self.dim, 0] = self._label(a=sst-sdif, b=sst, c=2*sdif)             
-    
-                    if additions: 
-                        add_spt = additions[0];
-                        add_sst = additions[1];
-                        add_sd = None
-                        if add_spt and add_sst: 
-                            add_sd = add_sst - add_spt                     
-                        
-                        if add_sd and add_sst+int(0.4*add_sd) <= self.dim: 
-                            y1[i, add_spt:int(add_sst+(0.4*add_sd)), 0] = 1        
-                        else:
-                            y1[i, add_spt:self.dim, 0] = 1                     
-    
-                        if add_spt and (add_spt-20 >= 0) and (add_spt+21 < self.dim):
-                            y2[i, add_spt-20:add_spt+21, 0] = self._label()
-                        elif add_spt and (add_spt+21 < self.dim):
-                            y2[i, 0:add_spt+add_spt+1, 0] = self._label(a=0, b=add_spt, c=2*add_spt)
-                        elif add_spt and (add_spt-20 >= 0):
-                            pdif = self.dim - add_spt
-                            y2[i, add_spt-pdif-1:self.dim, 0] = self._label(a=add_spt-pdif, b=add_spt, c=2*pdif)
-    
-                        if add_sst and (add_sst-20 >= 0) and (add_sst+21 < self.dim):
-                            y3[i, add_sst-20:add_sst+21, 0] = self._label()
-                        elif add_sst and (add_sst+21 < self.dim):
-                            y3[i, 0:add_sst+add_sst+1, 0] = self._label(a=0, b=add_sst, c=2*add_sst)
-                        elif add_sst and (add_sst-20 >= 0):
-                            sdif = self.dim - add_sst
-                            y3[i, add_sst-sdif-1:self.dim, 0] = self._label(a=add_sst-sdif, b=add_sst, c=2*sdif) 
-    
-    
-                elif self.label_type  == 'box':
-                    sd = None                             
-                    if sst and spt:
-                        sd = sst - spt      
-
-                    if sd and sst+int(0.4*sd) <= self.dim: 
-                        y1[i, spt:int(sst+(0.4*sd)), 0] = 1        
-                    else:
-                        y1[i, spt:self.dim, 0] = 1         
-                    if spt: 
-                        y2[i, spt-20:spt+20, 0] = 1
-                    if sst:
-                        y3[i, sst-20:sst+20, 0] = 1                       
-                   
-                    if additions:
-                        add_sd = None
-                        add_spt = additions[0];
-                        add_sst = additions[1];
-                        if add_spt and add_sst:
-                            add_sd = add_sst - add_spt  
-                            
-                        if add_sd and add_sst+int(0.4*add_sd) <= self.dim: 
-                            y1[i, add_spt:int(add_sst+(0.4*add_sd)), 0] = 1        
-                        else:
-                            y1[i, add_spt:self.dim, 0] = 1                     
-                        if add_spt:
-                            y2[i, add_spt-20:add_spt+20, 0] = 1
-                        if add_sst:
-                            y3[i, add_sst-20:add_sst+20, 0] = 1                 
+                            y1[i, spt:self.dim, 0] = 1         
+                        if spt: 
+                            y2[i, spt-20:spt+20, 0] = 1
+                        if sst:
+                            y3[i, sst-20:sst+20, 0] = 1                       
+                    
+                        if additions:
+                            add_sd = None
+                            add_spt = additions[0];
+                            add_sst = additions[1];
+                            if add_spt and add_sst:
+                                add_sd = add_sst - add_spt  
+                                
+                            if add_sd and add_sst+int(0.4*add_sd) <= self.dim: 
+                                y1[i, add_spt:int(add_sst+(0.4*add_sd)), 0] = 1        
+                            else:
+                                y1[i, add_spt:self.dim, 0] = 1                     
+                            if add_spt:
+                                y2[i, add_spt-20:add_spt+20, 0] = 1
+                            if add_sst:
+                                y3[i, add_sst-20:add_sst+20, 0] = 1                 
 
         fl.close() 
                            
